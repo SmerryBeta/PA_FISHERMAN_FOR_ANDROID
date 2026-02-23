@@ -1,0 +1,113 @@
+package com.example.myapplication;
+
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.ContentResolver;
+import android.media.AudioAttributes;
+import android.net.Uri;
+
+public class SoundManager {
+
+    private static final String CH_NORMAL = "notify_normal";
+
+    private static final String CH_IMPORTANT = "notify_important";
+
+    private static final String CH_URGENT = "notify_urgent";
+
+    private static final String CH_SILENT = "notify_silent";
+
+    private final MainActivity main;
+
+    /**
+     * 提示音类型
+     */
+    public enum NotifyType {
+        NORMAL(CH_NORMAL, R.raw.notify_normal, NotificationManager.IMPORTANCE_DEFAULT, "普通通知"),
+        IMPORTANT(CH_IMPORTANT, R.raw.notify_heavy, NotificationManager.IMPORTANCE_HIGH, "重要通知"),
+        URGENT(CH_URGENT, R.raw.notify_alarm, NotificationManager.IMPORTANCE_HIGH, "紧急通知"),
+        SILENT(CH_SILENT, 0, NotificationManager.IMPORTANCE_LOW, "静默通知");
+
+        private final String channelId;
+
+        private final int soundRes;
+
+        private final int importance;
+
+        private final String name;
+
+        NotifyType(String channelId, int soundRes, int importance, String name) {
+            this.channelId = channelId;
+            this.soundRes = soundRes;
+            this.importance = importance;
+            this.name = name;
+        }
+
+        public String getChannelId() {
+            return channelId;
+        }
+
+        public int getSoundRes() {
+            return soundRes;
+        }
+
+        public int getImportance() {
+            return importance;
+        }
+
+        public String getName() {
+            return name;
+        }
+    }
+
+    public SoundManager(MainActivity main) {
+        this.main = main;
+    }
+
+    public void createAllChannel() {
+        for (NotifyType value : NotifyType.values()) {
+            createSoundChannel(
+                    value.getChannelId(),
+                    value.getName(),
+                    value.getImportance(),
+                    value.getSoundRes()
+            );
+        }
+    }
+
+    private void createSoundChannel(
+            String id,
+            String name,
+            int importance,
+            int soundRes
+    ) {
+        NotificationChannel ch =
+                new NotificationChannel(id, name, importance);
+
+        // 启用锁屏显示
+        ch.setLockscreenVisibility(NotificationManager.IMPORTANCE_HIGH);
+        
+        // 启用震动
+        ch.enableVibration(true);
+        ch.setVibrationPattern(new long[]{0, 250, 200, 250});
+        
+        if (soundRes != 0) {
+            Uri sound = Uri.parse(
+                    ContentResolver.SCHEME_ANDROID_RESOURCE + "://"
+                            + main.getPackageName() + "/raw/" + soundRes
+            );
+
+            AudioAttributes attrs = new AudioAttributes.
+                    Builder().
+                    setUsage(AudioAttributes.USAGE_NOTIFICATION).
+                    build();
+
+            ch.setSound(sound, attrs);
+        } else {
+            ch.setSound(null, null); // 静默
+        }
+
+        main.getSystemService(NotificationManager.class)
+                .createNotificationChannel(ch);
+    }
+}
+
