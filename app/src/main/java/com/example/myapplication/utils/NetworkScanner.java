@@ -65,7 +65,7 @@ public class NetworkScanner {
      * @param callback 回调接口
      */
     public void scan(String subnet, int port, ScanCallback callback) {
-        List<ServerInfo> foundServers = new ArrayList<>();
+        List<ServerInfo> foundServers = java.util.Collections.synchronizedList(new ArrayList<>());
         final int totalHosts = 254;
         final int[] scannedCount = {0};
 
@@ -75,26 +75,31 @@ public class NetworkScanner {
             final String ip = subnet + "." + i;
             executorService.execute(() -> {
                 try {
-                    // 首先检查主机是否可达
-                    InetAddress address = InetAddress.getByName(ip);
-                    if (address.isReachable(1000)) {
-                        // 尝试连接指定端口
-                        if (isPortOpen(ip, port)) {
-                            // 尝试获取服务器信息
-                            String info = getServerInfo(ip, port);
-                            if (info != null) {
-                                ServerInfo serverInfo = new ServerInfo(ip, port, info);
-                                foundServers.add(serverInfo);
-                                mainHandler.post(() -> callback.onServerFound(ip, port, info));
-                            }
+                    // 直接尝试连接端口（跳过 isReachable，因为在非 root Android 上不可靠）
+                    if (isPortOpen(ip, port)) {
+                        Log.d(TAG, "端口开放: " + ip + ":" + port);
+                        // 尝试获取服务器信息
+                        String info = getServerInfo(ip, port);
+                        if (info != null) {
+                            ServerInfo serverInfo = new ServerInfo(ip, port, info);
+                            foundServers.add(serverInfo);
+                            mainHandler.post(() -> callback.onServerFound(ip, port, info));
+                        } else {
+                            // 即使无法获取 server_info，也标记为找到端口开放的服务器
+                            String defaultInfo = ip + ":" + port;
+                            ServerInfo serverInfo = new ServerInfo(ip, port, defaultInfo);
+                            foundServers.add(serverInfo);
+                            mainHandler.post(() -> callback.onServerFound(ip, port, defaultInfo));
                         }
                     }
                 } catch (Exception e) {
-                    // 忽略扫描错误
+                    Log.d(TAG, "扫描错误 " + ip + ": " + e.getMessage());
                 } finally {
-                    scannedCount[0]++;
-                    final int progress = scannedCount[0];
-                    mainHandler.post(() -> callback.onProgress(progress, totalHosts));
+                    synchronized (scannedCount) {
+                        scannedCount[0]++;
+                        final int progress = scannedCount[0];
+                        mainHandler.post(() -> callback.onProgress(progress, totalHosts));
+                    }
                 }
             });
         }
@@ -102,8 +107,13 @@ public class NetworkScanner {
         // 等待所有扫描完成
         executorService.execute(() -> {
             try {
-                Thread.sleep(5000); // 等待最多5秒
-                mainHandler.post(() -> callback.onScanComplete(foundServers));
+                // 等待直到所有扫描完成或超时
+                int waitTime = 0;
+                while (scannedCount[0] < totalHosts && waitTime < 15000) {
+                    Thread.sleep(500);
+                    waitTime += 500;
+                }
+                mainHandler.post(() -> callback.onScanComplete(new ArrayList<>(foundServers)));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

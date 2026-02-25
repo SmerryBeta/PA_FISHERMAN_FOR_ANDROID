@@ -51,6 +51,7 @@ public final class NotifyNotificationFactory {
 
         channel.setSound(null, null); // 前台通知绝不出声
         channel.enableVibration(false);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC); // 锁屏显示通知及内容
 
         nm.createNotificationChannel(channel);
     }

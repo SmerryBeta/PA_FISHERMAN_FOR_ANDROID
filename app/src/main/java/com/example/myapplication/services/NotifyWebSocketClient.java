@@ -2,7 +2,9 @@ package com.example.myapplication.services;
 
 import android.annotation.SuppressLint;
 import android.app.Notification;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,6 +13,7 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
+import com.example.myapplication.MainActivity;
 import com.example.myapplication.R;
 import com.example.myapplication.SoundManager;
 import com.example.myapplication.SPUtils;
@@ -38,6 +41,7 @@ public class NotifyWebSocketClient {
     private Handler reconnectHandler;
     private Runnable reconnectRunnable;
     private boolean isRunning = false;
+    private boolean isConnecting = false; // 防止重复连接
     private int reconnectAttempts = 0;
     private ConnectionCallback connectionCallback;
 
@@ -70,6 +74,13 @@ public class NotifyWebSocketClient {
             return;
         }
 
+        // 防止重复连接
+        if (isConnecting) {
+            Log.d(TAG, "正在连接中，跳过重复调用");
+            return;
+        }
+        isConnecting = true;
+
         String serverUrl = SPUtils.getPrefs().getString("server_url", "");
         int serverPort = SPUtils.getPrefs().getInt("server_port", 1225);
 
@@ -77,6 +88,7 @@ public class NotifyWebSocketClient {
 
         if (serverUrl.isEmpty()) {
             Log.i(TAG, "服务器地址未设置，无法连接");
+            isConnecting = false;
             if (connectionCallback != null) {
                 connectionCallback.onError("服务器地址未设置");
             }
@@ -101,6 +113,7 @@ public class NotifyWebSocketClient {
                 public void onOpen(ServerHandshake handshakedata) {
                     Log.i(TAG, "WebSocket 已连接");
                     isRunning = true;
+                    isConnecting = false;
                     reconnectAttempts = 0;
                     if (connectionCallback != null) {
                         new Handler(Looper.getMainLooper()).post(() -> connectionCallback.onConnected());
@@ -116,6 +129,7 @@ public class NotifyWebSocketClient {
                 public void onClose(int code, String reason, boolean remote) {
                     Log.i(TAG, "WebSocket 已关闭: " + reason + " (code: " + code + ")");
                     isRunning = false;
+                    isConnecting = false;
                     if (connectionCallback != null) {
                         new Handler(Looper.getMainLooper()).post(() ->
                                 connectionCallback.onDisconnected(reason));
@@ -128,6 +142,7 @@ public class NotifyWebSocketClient {
                 public void onError(Exception ex) {
                     Log.e(TAG, "WebSocket 错误: " + ex.getMessage(), ex);
                     isRunning = false;
+                    isConnecting = false;
                     if (connectionCallback != null) {
                         new Handler(Looper.getMainLooper()).post(() ->
                                 connectionCallback.onError(ex.getMessage()));
@@ -143,6 +158,7 @@ public class NotifyWebSocketClient {
         } catch (Exception e) {
             Log.e(TAG, "连接失败: " + e.getMessage(), e);
             isRunning = false;
+            isConnecting = false;
             if (connectionCallback != null) {
                 connectionCallback.onError("连接失败: " + e.getMessage());
             }
@@ -185,6 +201,17 @@ public class NotifyWebSocketClient {
 
         String channelId = type.getChannelId();
 
+        // 创建点击通知时的 Intent，打开 MainActivity 并导航到控制面板
+        Intent intent = new Intent(context, MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        intent.putExtra("navigate_to", "control_panel");
+        
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, intent, flags);
+
         Notification notification = new NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(R.drawable.ic_stat_name)
                 .setContentTitle(title)
@@ -192,6 +219,7 @@ public class NotifyWebSocketClient {
                 .setAutoCancel(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // 锁屏可见
                 .setPriority(NotificationCompat.PRIORITY_HIGH) // 高优先级
+                .setContentIntent(pendingIntent) // 点击跳转
                 .build();
 
         try {
@@ -264,5 +292,40 @@ public class NotifyWebSocketClient {
      */
     public boolean isConnected() {
         return webSocketClient != null && webSocketClient.isOpen();
+    }
+
+    /**
+     * 重置重连计数，允许重新连接
+     */
+    public void resetReconnectAttempts() {
+        reconnectAttempts = 0;
+        Log.d(TAG, "重连计数已重置");
+    }
+
+    /**
+     * 强制重新连接（供用户手动触发）
+     */
+    public void forceReconnect() {
+        Log.d(TAG, "===== forceReconnect() 被调用 =====");
+        // 先断开现有连接
+        disconnect();
+        // 重置重连计数
+        resetReconnectAttempts();
+        // 稍延后重新连接
+        reconnectHandler.postDelayed(this::connect, 300);
+    }
+
+    /**
+     * 获取当前重连尝试次数
+     */
+    public int getReconnectAttempts() {
+        return reconnectAttempts;
+    }
+
+    /**
+     * 获取最大重连次数
+     */
+    public int getMaxReconnectAttempts() {
+        return MAX_RECONNECT_ATTEMPTS;
     }
 }

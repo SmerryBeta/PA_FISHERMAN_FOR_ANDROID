@@ -6,6 +6,8 @@ import android.content.ContentResolver;
 import android.media.AudioAttributes;
 import android.net.Uri;
 
+import androidx.core.app.NotificationCompat;
+
 public class SoundManager {
 
     private static final String CH_NORMAL = "notify_normal";
@@ -83,8 +85,8 @@ public class SoundManager {
         NotificationChannel ch =
                 new NotificationChannel(id, name, importance);
 
-        // 启用锁屏显示
-        ch.setLockscreenVisibility(NotificationManager.IMPORTANCE_HIGH);
+        // 启用锁屏显示（使用 VISIBILITY_PUBLIC 确保锁屏可见）
+        ch.setLockscreenVisibility(NotificationCompat.VISIBILITY_PUBLIC);
         
         // 启用震动
         ch.enableVibration(true);

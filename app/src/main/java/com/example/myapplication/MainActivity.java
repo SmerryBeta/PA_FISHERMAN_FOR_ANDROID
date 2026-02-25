@@ -103,6 +103,24 @@ public class MainActivity extends AppCompatActivity {
 
         // 检查是否需要自动扫描服务器
         checkAutoScan();
+        
+        // 处理通知点击跳转
+        handleNotificationIntent(getIntent());
+    }
+    
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        handleNotificationIntent(intent);
+    }
+    
+    private void handleNotificationIntent(Intent intent) {
+        if (intent != null && "control_panel".equals(intent.getStringExtra("navigate_to"))) {
+            // 导航到控制面板
+            NavController navController = Navigation.findNavController(
+                    this, R.id.nav_host_fragment_content_main);
+            navController.navigate(R.id.ControlPanelFragment);
+        }
     }
 
     private void setupNavigation() {
@@ -122,11 +140,15 @@ public class MainActivity extends AppCompatActivity {
 
     private void bindNotifyService() {
         Intent intent = new Intent(this, NotifyService.class);
+        
+        // 先绑定服务
         bindService(intent, serviceConnection, BIND_AUTO_CREATE);
         
-        // 如果之前已启用通知，启动服务
+        // 仅当之前已启用通知且服务未运行时，才启动服务
+        // 注意：NotifyService.onCreate 中已经会检查 notify 设置并调用 enable()
+        // 所以这里不需要发送 ACTION_ENABLE，避免重复连接
         if (SPUtils.getPrefs().getBoolean("notify", false)) {
-            intent.setAction(NotifyService.ACTION_ENABLE);
+            // 只启动服务，不发送 ACTION_ENABLE
             ContextCompat.startForegroundService(this, intent);
         }
     }
